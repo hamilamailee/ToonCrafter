@@ -320,7 +320,7 @@ def run_inference(args, gpu_num, gpu_no):
     filename_list_rank = [filename_list[i] for i in indices]
 
     start = time.time()
-    with torch.no_grad(), torch.cuda.amp.autocast('cuda'):
+    with torch.no_grad(), torch.autocast("cuda"): 
         for idx, indice in tqdm(enumerate(range(0, len(prompt_list_rank), args.bs)), desc='Sample Batch'):
             prompts = prompt_list_rank[indice:indice+args.bs]
             videos = data_list_rank[indice:indice+args.bs]
