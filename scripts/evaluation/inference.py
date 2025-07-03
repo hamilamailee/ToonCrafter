@@ -25,7 +25,7 @@ def get_filelist(data_dir, postfixes):
     return file_list
 
 def load_model_checkpoint(model, ckpt):
-    state_dict = torch.load(ckpt, map_location="cpu")
+    state_dict = torch.load(ckpt, map_location="cpu", weights_only=True)
     if "state_dict" in list(state_dict.keys()):
         state_dict = state_dict["state_dict"]
         try:
@@ -313,7 +313,7 @@ def run_inference(args, gpu_num, gpu_no):
     num_samples = len(prompt_list)
     samples_split = num_samples // gpu_num
     print('Prompts testing [rank:%d] %d/%d samples loaded.'%(gpu_no, samples_split, num_samples))
-    #indices = random.choices(list(range(0, num_samples)), k=samples_per_device)
+    # indices = random.choices(list(range(0, num_samples)), k=samples_per_device)
     indices = list(range(samples_split*gpu_no, samples_split*(gpu_no+1)))
     prompt_list_rank = [prompt_list[i] for i in indices]
     data_list_rank = [data_list[i] for i in indices]
