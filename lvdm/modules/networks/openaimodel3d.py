@@ -593,6 +593,10 @@ class UNetModel(nn.Module):
 
         h = self.middle_block(h, emb, context=context, batch_size=b)
         for module in self.output_blocks:
+            print(f"\n********\n{np.array(h.cpu()).shape}\n********\n")
+            print(f"\n********\n{hs.cpu().shape}\n********\n")
+            print(f"\n********\n{hs[-1].cpu().shape}\n********\n")
+            
             h = torch.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context=context, batch_size=b)
         h = h.type(x.dtype)

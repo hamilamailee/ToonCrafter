@@ -277,7 +277,10 @@ def image_guided_synthesis(model, prompts, videos, noise_shape, n_samples=1, ddi
     return batch_variants.permute(1, 0, 2, 3, 4, 5)
 
 
-def run_inference(args, gpu_num, gpu_no):
+def run_inference(args):
+    
+    gpu_num = args.gpu_num
+    gpu_no = args.gpu_no
     ## model config
     config = OmegaConf.load(args.config)
     model_config = config.pop("model", OmegaConf.create())
@@ -311,8 +314,24 @@ def run_inference(args, gpu_num, gpu_no):
     assert os.path.exists(args.prompt_dir), "Error: prompt file Not Found!"
     filename_list, data_list, prompt_list = load_data_prompts(args.prompt_dir, video_size=(args.height, args.width), video_frames=n_frames, interp=args.interp)
     num_samples = len(prompt_list)
-    samples_split = num_samples // gpu_num
-    print('Prompts testing [rank:%d] %d/%d samples loaded.'%(gpu_no, samples_split, num_samples))
+    
+    samples_per_gpu = num_samples // gpu_num
+    remainder = num_samples % gpu_num  # leftover samples
+    
+    # Distribute leftover samples to the first GPUs
+    if gpu_no < remainder:
+        start_idx = gpu_no * (samples_per_gpu + 1)
+        end_idx = start_idx + samples_per_gpu + 1
+    else:
+        start_idx = gpu_no * samples_per_gpu + remainder
+        end_idx = start_idx + samples_per_gpu
+
+    samples_split = end_idx - start_idx
+    if samples_split <= 0:
+        print(f"Warning: GPU {gpu_no} assigned zero samples, skipping.")
+        return
+    print(f"GPU {gpu_no} processing samples from {start_idx} to {end_idx-1} (total {samples_split})")
+
     # indices = random.choices(list(range(0, num_samples)), k=samples_per_device)
     indices = list(range(samples_split*gpu_no, samples_split*(gpu_no+1)))
     prompt_list_rank = [prompt_list[i] for i in indices]
@@ -320,15 +339,18 @@ def run_inference(args, gpu_num, gpu_no):
     filename_list_rank = [filename_list[i] for i in indices]
 
     start = time.time()
+    
+    device = torch.device(f"cuda:{gpu_no}")
+
     with torch.no_grad(), torch.autocast("cuda"): 
         for idx, indice in tqdm(enumerate(range(0, len(prompt_list_rank), args.bs)), desc='Sample Batch'):
             prompts = prompt_list_rank[indice:indice+args.bs]
             videos = data_list_rank[indice:indice+args.bs]
             filenames = filename_list_rank[indice:indice+args.bs]
             if isinstance(videos, list):
-                videos = torch.stack(videos, dim=0).to("cuda")
+                videos = torch.stack(videos, dim=0).to(device)
             else:
-                videos = videos.unsqueeze(0).to("cuda")
+                videos = videos.unsqueeze(0).to(device)
 
             batch_samples = image_guided_synthesis(model, prompts, videos, noise_shape, args.n_samples, args.ddim_steps, args.ddim_eta, \
                                 args.unconditional_guidance_scale, args.cfg_img, args.frame_stride, args.text_input, args.multiple_cond_cfg, args.loop, args.interp, args.timestep_spacing, args.guidance_rescale)
@@ -371,6 +393,9 @@ def get_parser():
     ## currently not support looping video and generative frame interpolation
     parser.add_argument("--loop", action='store_true', default=False, help="generate looping videos or not")
     parser.add_argument("--interp", action='store_true', default=False, help="generate generative frame interpolation or not")
+    
+    parser.add_argument("--gpu_num", type=int, default=1, help="Total number of GPUs used")
+    parser.add_argument("--gpu_no", type=int, default=0, help="GPU number for this process (0-based)")
     return parser
 
 
@@ -381,5 +406,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     seed_everything(args.seed)
-    rank, gpu_num = 0, 1
-    run_inference(args, gpu_num, rank)
+    # rank, gpu_num = 0, 1
+    run_inference(args)
